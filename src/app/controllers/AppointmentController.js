@@ -1,15 +1,20 @@
 import * as Yup from 'yup';
-import { startOfHour, parseISO, isBefore } from 'date-fns';
+import { startOfHour, parseISO, isBefore, format } from 'date-fns';
+import pt from 'date-fns/locale/pt';
 import User from '../models/User';
 import File from '../models/File';
 import Appointment from '../models/Appointment';
+import Notification from '../schemas/Notification';
 
 class AppointmentController {
   async index(req, res) {
+    const { page = 1 } = req.query;
     const appointments = await Appointment.findAll({
       where: { user_id: req.userID, canceled_at: null },
       order: ['date'],
       attributes: ['id', 'date'],
+      limit: 20,
+      offset: (page - 1) * 20,
       include: [
         {
           model: User,
@@ -54,6 +59,14 @@ class AppointmentController {
     }
 
     /**
+     * Check if user and provider is the same (ERRO DURANTE VIDEO)
+     */
+    if (req.userID === provider_id) {
+      return res
+        .status(401)
+        .json({ error: 'You cannot create appointments with yourself' });
+    }
+    /**
      * Check past dates
      */
     const hourStart = startOfHour(parseISO(date));
@@ -83,6 +96,21 @@ class AppointmentController {
       user_id: req.userID,
       provider_id,
       date,
+    });
+
+    /**
+     * Notify appointment provider
+     */
+    const user = await User.findByPk(req.userID);
+    const formattedDate = format(
+      hourStart,
+      "'dia' dd 'de' MMMM', às' H:mm'h'",
+      { locale: pt }
+    );
+
+    await Notification.create({
+      content: `novo agendamento de ${user.name} para o ${formattedDate}`,
+      user: provider_id,
     });
 
     return res.json(appointment);
